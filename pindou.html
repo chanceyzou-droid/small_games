@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>MARD拼豆专业生成器（全对称网格）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold text-center text-pink-600 mb-6">🎨 MARD拼豆专业生成器（全对称网格）</h1>
+
+        <div class="flex gap-2 mb-4 flex-wrap">
+            <button onclick="switchMode('upload')" class="px-4 py-2 bg-blue-500 text-white rounded" id="btn-upload">图片转图纸</button>
+            <button onclick="switchMode('draw')" class="px-4 py-2 bg-green-500 text-white rounded" id="btn-draw">手动制作图纸</button>
+        </div>
+
+        <div class="bg-white p-4 rounded-lg shadow mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="font-bold">拼豆板尺寸：</label>
+                <select id="sizeSelect" class="border p-2 w-full mt-1" onchange="updateSize()">
+                    <option value="52">52×52（MARD主流）</option>
+                    <option value="78">78×78（MARD主流）</option>
+                    <option value="104">104×104（MARD主流）</option>
+                    <option value="custom">自定义尺寸</option>
+                </select>
+                <input type="number" id="customSize" class="border p-2 w-full mt-1 hidden" placeholder="输入尺寸" value="32" min="10" max="200">
+            </div>
+            <div>
+                <label class="font-bold">拼豆套装选择：</label>
+                <select id="setSelect" class="border p-2 w-full mt-1" onchange="onSetChange()">
+                    <option value="24">24色入门套装</option>
+                    <option value="48">48色进阶套装</option>
+                    <option value="96">96色专业套装</option>
+                    <option value="221">221色全色系</option>
+                </select>
+            </div>
+            <div class="flex items-end gap-2">
+                <button onclick="clearCanvas()" class="px-4 py-2 bg-red-500 text-white rounded">清空画布</button>
+                <button onclick="saveImage()" class="px-4 py-2 bg-orange-500 text-white rounded">保存图纸</button>
+            </div>
+        </div>
+
+        <div id="modeUpload" class="bg-white p-4 rounded-lg shadow mb-4 hidden">
+            <input type="file" id="imageUpload" accept="image/*" class="mb-2" onchange="loadImage(event)">
+            <button onclick="generateFromImage()" class="px-4 py-2 bg-blue-600 text-white rounded">生成拼豆图纸</button>
+        </div>
+
+        <div class="flex flex-col md:flex-row gap-4">
+            <div class="bg-white p-4 rounded-lg shadow flex-1">
+                <canvas id="canvas" class="border border-gray-300 mx-auto cursor-pointer"></canvas>
+            </div>
+
+            <div class="bg-white p-4 rounded-lg shadow w-full md:w-80">
+                <h3 class="font-bold mb-2">📊 色号统计（仅当前套装）</h3>
+                <div id="colorStats" class="max-h-[500px] overflow-y-auto mb-6"></div>
+
+                <h3 class="font-bold mt-4 mb-2">✏️ 选择色号（当前套装）</h3>
+                <select id="drawMard" class="border p-2 w-full mb-2"></select>
+                <div class="flex items-center gap-2">
+                    <div id="mardPreview" class="w-8 h-8 rounded border"></div>
+                    <span id="mardText">请选择</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// 完整 221 色库
+const MARD_COLORS = [
+    {code:"A1",hex:"#FAF5CD"},{code:"A2",hex:"#FCFED6"},{code:"A3",hex:"#FCFF92"},{code:"A4",hex:"#F7EC5C"},
+    {code:"A5",hex:"#F0D83A"},{code:"A6",hex:"#FDA951"},{code:"A7",hex:"#FA8C4F"},{code:"A8",hex:"#FBDA4D"},
+    {code:"A9",hex:"#F79D5F"},{code:"A10",hex:"#F47E38"},{code:"A11",hex:"#FEDB99"},{code:"A12",hex:"#FDA276"},
+    {code:"A13",hex:"#FEC667"},{code:"A14",hex:"#F75842"},{code:"A15",hex:"#FBF65E"},{code:"A16",hex:"#FEFF97"},
+    {code:"A17",hex:"#FDE173"},{code:"A18",hex:"#FCBF80"},{code:"A19",hex:"#FD7E77"},{code:"A20",hex:"#F9D666"},
+    {code:"A21",hex:"#FAE393"},{code:"A22",hex:"#EDF878"},{code:"A23",hex:"#E4C8BA"},{code:"A24",hex:"#F3F6A9"},
+    {code:"A25",hex:"#FDF785"},{code:"A26",hex:"#FFC734"},
+    {code:"B1",hex:"#DFF13B"},{code:"B2",hex:"#64F343"},{code:"B3",hex:"#A1F586"},{code:"B4",hex:"#5FDF34"},
+    {code:"B5",hex:"#39E158"},{code:"B6",hex:"#64E0A4"},{code:"B7",hex:"#3EAE7C"},{code:"B8",hex:"#1D9B54"},
+    {code:"B9",hex:"#2A5037"},{code:"B10",hex:"#9AD1BA"},{code:"B11",hex:"#627032"},{code:"B12",hex:"#1A6E3D"},
+    {code:"B13",hex:"#C8E87D"},{code:"B14",hex:"#ABE84F"},{code:"B15",hex:"#305335"},{code:"B16",hex:"#C0ED9C"},
+    {code:"B17",hex:"#9EB33E"},{code:"B18",hex:"#E6ED4F"},{code:"B19",hex:"#26B78E"},{code:"B20",hex:"#CBECCF"},
+    {code:"B21",hex:"#18616A"},{code:"B22",hex:"#0A4241"},{code:"B23",hex:"#343B1A"},{code:"B24",hex:"#E8FAA6"},
+    {code:"B25",hex:"#4E846D"},{code:"B26",hex:"#907C35"},{code:"B27",hex:"#D0E0AF"},{code:"B28",hex:"#9EE5BB"},
+    {code:"B29",hex:"#C6DF5F"},{code:"B30",hex:"#E3FBB1"},{code:"B31",hex:"#B4E691"},{code:"B32",hex:"#92AD60"},
+    {code:"C1",hex:"#F0FEE4"},{code:"C2",hex:"#ABF8FE"},{code:"C3",hex:"#A2E0F7"},{code:"C4",hex:"#44CDFB"},
+    {code:"C5",hex:"#06AADF"},{code:"C6",hex:"#54A7E9"},{code:"C7",hex:"#3977CA"},{code:"C8",hex:"#0F52BD"},
+    {code:"C9",hex:"#3349C3"},{code:"C10",hex:"#3CBCE3"},{code:"C11",hex:"#2ADED3"},{code:"C12",hex:"#1E334E"},
+    {code:"C13",hex:"#CDE7FE"},{code:"C14",hex:"#D5FCF7"},{code:"C15",hex:"#21C5C4"},{code:"C16",hex:"#1858A2"},
+    {code:"C17",hex:"#02D1F3"},{code:"C18",hex:"#213244"},{code:"C19",hex:"#18869D"},{code:"C20",hex:"#1A70A9"},
+    {code:"C21",hex:"#BCDDFF"},{code:"C22",hex:"#6BB1BB"},{code:"C23",hex:"#C8E2FD"},{code:"C24",hex:"#7EC5F9"},
+    {code:"C25",hex:"#A9E8E0"},{code:"C26",hex:"#42ADCF"},{code:"C27",hex:"#D0DEF9"},{code:"C28",hex:"#BDCEE8"},
+    {code:"C29",hex:"#364A89"},
+    {code:"D1",hex:"#ACB7EF"},{code:"D2",hex:"#868DD3"},{code:"D3",hex:"#3554AF"},{code:"D4",hex:"#162D7B"},
+    {code:"D5",hex:"#B34EC6"},{code:"D6",hex:"#B37BDC"},{code:"D7",hex:"#8758A9"},{code:"D8",hex:"#E3D2FE"},
+    {code:"D9",hex:"#D5B9F4"},{code:"D10",hex:"#301A49"},{code:"D11",hex:"#BEB9E2"},{code:"D12",hex:"#DC99CE"},
+    {code:"D13",hex:"#B5038D"},{code:"D14",hex:"#862993"},{code:"D15",hex:"#2F1F8C"},{code:"D16",hex:"#E2E4F0"},
+    {code:"D17",hex:"#C7D3F9"},{code:"D18",hex:"#9A64B8"},{code:"D19",hex:"#D8C2D9"},{code:"D20",hex:"#9A35AD"},
+    {code:"D21",hex:"#940595"},{code:"D22",hex:"#38389A"},{code:"D23",hex:"#EADBF8"},{code:"D24",hex:"#768AE1"},
+    {code:"D25",hex:"#4950C2"},{code:"D26",hex:"#D6C6EB"},
+    {code:"E1",hex:"#F6D4CB"},{code:"E2",hex:"#FCC1DD"},{code:"E3",hex:"#F6BDE8"},{code:"E4",hex:"#E8649E"},
+    {code:"E5",hex:"#F0569F"},{code:"E6",hex:"#EB4172"},{code:"E7",hex:"#C53674"},{code:"E8",hex:"#FDDBE9"},
+    {code:"E9",hex:"#E376C7"},{code:"E10",hex:"#D13B95"},{code:"E11",hex:"#F7DAD4"},{code:"E12",hex:"#F693BF"},
+    {code:"E13",hex:"#B5026A"},{code:"E14",hex:"#FAD4BF"},{code:"E15",hex:"#F5C9CA"},{code:"E16",hex:"#FBF4EC"},
+    {code:"E17",hex:"#F7E3EC"},{code:"E18",hex:"#F9C8DB"},{code:"E19",hex:"#F6BBD1"},{code:"E20",hex:"#D7C6CE"},
+    {code:"E21",hex:"#C09DA4"},{code:"E22",hex:"#B38C9F"},{code:"E23",hex:"#937D8A"},{code:"E24",hex:"#DEBEE5"},
+    {code:"F1",hex:"#FE9381"},{code:"F2",hex:"#F63D4B"},{code:"F3",hex:"#EE4E3E"},{code:"F4",hex:"#FB2A40"},
+    {code:"F5",hex:"#E10328"},{code:"F6",hex:"#913635"},{code:"F7",hex:"#911932"},{code:"F8",hex:"#BB0126"},
+    {code:"F9",hex:"#E0677A"},{code:"F10",hex:"#874628"},{code:"F11",hex:"#592323"},{code:"F12",hex:"#F3536B"},
+    {code:"F13",hex:"#F45C45"},{code:"F14",hex:"#FCADB2"},{code:"F15",hex:"#D50527"},{code:"F16",hex:"#F8C0A9"},
+    {code:"F17",hex:"#E89B7D"},{code:"F18",hex:"#D07F4A"},{code:"F19",hex:"#BE454A"},{code:"F20",hex:"#C69495"},
+    {code:"F21",hex:"#F2B8C6"},{code:"F22",hex:"#F7C3D0"},{code:"F23",hex:"#ED806C"},{code:"F24",hex:"#E09DAF"},
+    {code:"F25",hex:"#E84854"},
+    {code:"G1",hex:"#FFE4D3"},{code:"G2",hex:"#FCC6AC"},{code:"G3",hex:"#F1C4A5"},{code:"G4",hex:"#DCB387"},
+    {code:"G5",hex:"#E7B34E"},{code:"G6",hex:"#E3A014"},{code:"G7",hex:"#985C3A"},{code:"G8",hex:"#713D2F"},
+    {code:"G9",hex:"#E4B685"},{code:"G10",hex:"#DA8C42"},{code:"G11",hex:"#DAC898"},{code:"G12",hex:"#FEC993"},
+    {code:"G13",hex:"#B2714B"},{code:"G14",hex:"#8B684C"},{code:"G15",hex:"#F6F8E3"},{code:"G16",hex:"#F2D8C1"},
+    {code:"G17",hex:"#77544E"},{code:"G18",hex:"#FFE3D5"},{code:"G19",hex:"#DD7D41"},{code:"G20",hex:"#A5452F"},
+    {code:"G21",hex:"#B38561"},
+    {code:"H1",hex:"#FFFFFF"},{code:"H2",hex:"#FBFBFB"},{code:"H3",hex:"#B4B4B4"},{code:"H4",hex:"#878787"},
+    {code:"H5",hex:"#464648"},{code:"H6",hex:"#2C2C2C"},{code:"H7",hex:"#010101"},{code:"H8",hex:"#E7D6DC"},
+    {code:"H9",hex:"#EFEDEE"},{code:"H10",hex:"#EBEBEB"},{code:"H11",hex:"#CDCDCD"},{code:"H12",hex:"#FDF6EE"},
+    {code:"H13",hex:"#F4EDF1"},{code:"H14",hex:"#CED7D4"},{code:"H15",hex:"#9AA6A6"},{code:"H16",hex:"#1B1213"},
+    {code:"H17",hex:"#F0EEEF"},{code:"H18",hex:"#FCFFF6"},{code:"H19",hex:"#F2EEE5"},{code:"H20",hex:"#96A09F"},
+    {code:"H21",hex:"#F8FBE6"},{code:"H22",hex:"#CACAD2"},{code:"H23",hex:"#9B9C94"},
+    {code:"M1",hex:"#BBC6B6"},{code:"M2",hex:"#909994"},{code:"M3",hex:"#697E81"},{code:"M4",hex:"#E0D4BC"},
+    {code:"M5",hex:"#D1CCAF"},{code:"M6",hex:"#B0AA86"},{code:"M7",hex:"#B0A796"},{code:"M8",hex:"#AE8082"},
+    {code:"M9",hex:"#A68862"},{code:"M10",hex:"#C4B3BB"},{code:"M11",hex:"#9D7693"},{code:"M12",hex:"#644B51"},
+    {code:"M13",hex:"#C79266"},{code:"M14",hex:"#C27563"},{code:"M15",hex:"#747D7A"}
+];
+
+// 套装色号（严格按你给的）
+const SETS = {
+  24: ["A3","A4","A6","A7","B3","B5","B8","C3","C5","C8","D6","D7","D9","E4","E6","F5","G1","G7","H1","H2","H3","H4","H5","H7"],
+  48: ["A3","A4","A6","A7","A10","A11","A13","A14","B3","B5","B7","B8","B10","B12","B14","C2","C3","C5","C6","C7","C8","C10","D2","D3","D5","D6","D7","D8","D9","E1","E2","E3","E4","E5","E6","F1","F2","F3","F4","F5","G1","G2","G3","G5","G7","G9","H1","H2","H3","H4","H5","H6","H7","M5","M6","M9","M12"],
+  96: ["A3","A4","A6","A7","A10","A11","A13","A14","B3","B5","B7","B8","B10","B12","B14","B17","B18","B19","B20","C2","C3","C5","C6","C7","C8","C10","C11","C13","C16","D2","D3","D5","D6","D7","D8","D9","D11","D12","D13","D14","D15","D16","E1","E2","E3","E4","E5","E6","E7","E8","E9","E10","E11","E12","E13","F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12","F13","G1","G2","G3","G5","G7","G8","G9","G13","G14","G17","H1","H2","H3","H4","H5","H6","H7","M5","M6","M9","M12"],
+  221: MARD_COLORS.map(c => c.code)
+};
+
+let canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+let currentMode = 'upload';
+let gridSize = 52;
+let pixelSize = 14;
+let pixelData = [];
+let currentHighlight = null;
+let selectedMard = null;
+
+window.onload = () => {
+    switchMode('upload');
+    initCanvas();
+    onSetChange();
+    canvas.addEventListener('click', drawOnCanvas);
+};
+
+// 套装切换 → 全部同步更新
+function onSetChange() {
+    updateDrawSelector();
+    clearCanvas();
+    if (currentMode === 'draw') initEmptyCanvas();
+}
+
+// 获取当前套装颜色列表
+function getCurrentSetColors() {
+    const set = document.getElementById('setSelect').value;
+    const codes = SETS[set];
+    return MARD_COLORS.filter(c => codes.includes(c.code));
+}
+
+// 更新手绘下拉（只显示当前套装）
+function updateDrawSelector() {
+    const sel = document.getElementById('drawMard');
+    sel.innerHTML = '';
+    const list = getCurrentSetColors();
+    list.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.hex;
+        opt.textContent = m.code;
+        sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => {
+        const m = MARD_COLORS.find(c => c.hex === sel.value);
+        selectedMard = m;
+        document.getElementById('mardPreview').style.background = m.hex;
+        document.getElementById('mardText').textContent = m.code;
+    });
+    sel.dispatchEvent(new Event('change'));
+}
+
+// 模式切换
+function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('modeUpload').classList.add('hidden');
+    document.querySelectorAll('[id^="btn-"]').forEach(btn => btn.classList.remove('bg-black'));
+    if (mode === 'upload') {
+        document.getElementById('modeUpload').classList.remove('hidden');
+        document.getElementById('btn-upload').classList.add('bg-black');
+    } else {
+        initEmptyCanvas();
+        document.getElementById('btn-draw').classList.add('bg-black');
+    }
+}
+
+// 尺寸
+function updateSize() {
+    const s = document.getElementById('sizeSelect');
+    const c = document.getElementById('customSize');
+    if (s.value === 'custom') { c.classList.remove('hidden'); gridSize = parseInt(c.value); }
+    else { c.classList.add('hidden'); gridSize = parseInt(s.value); }
+    initCanvas();
+}
+document.getElementById('customSize').addEventListener('change', updateSize);
+
+// 画布
+function initCanvas() {
+    const t = gridSize * pixelSize;
+    canvas.width = t; canvas.height = t;
+    clearCanvas();
+}
+
+function clearCanvas() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pixelData = []; currentHighlight = null;
+    document.getElementById('colorStats').innerHTML = '';
+    drawGrid();
+}
+
+// ======================
+// 已按你要求修正：三种尺寸独立对称起点
+// ======================
+function drawGrid() {
+    let start;
+    if (gridSize === 52) start = 1;    // 第2格
+    if (gridSize === 78) start = 4;    // 第5格
+    if (gridSize === 104) start = 2;   // 第3格
+
+    // 细线
+    ctx.strokeStyle = '#eee';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= gridSize; i++) {
+        const p = i * pixelSize;
+        ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(canvas.width, p); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height); ctx.stroke();
+    }
+
+    // 5格线
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    for (let i = start; i <= gridSize; i += 5) {
+        const p = i * pixelSize;
+        ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(canvas.width, p); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height); ctx.stroke();
+    }
+
+    // 10格线
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 3;
+    for (let i = start; i <= gridSize; i += 10) {
+        const p = i * pixelSize;
+        ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(canvas.width, p); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, canvas.height); ctx.stroke();
+    }
+
+    // 外框
+    if ([52,78,104].includes(gridSize)) {
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#000';
+        ctx.strokeRect(0,0,canvas.width,canvas.height);
+    }
+}
+
+// 图片
+function loadImage(e) {
+    const img = new Image();
+    img.onload = () => { ctx.clearRect(0,0,canvas.width,canvas.height); ctx.drawImage(img,0,0,gridSize,gridSize); };
+    img.src = URL.createObjectURL(e.target.files[0]);
+}
+
+// 生成
+function generateFromImage() {
+    getPixels();
+    renderAll();
+}
+
+function getPixels() {
+    pixelData = [];
+    const d = ctx.getImageData(0,0,gridSize,gridSize).data;
+    for(let y=0;y<gridSize;y++){
+        const row=[];
+        for(let x=0;x<gridSize;x++){
+            const i=(y*gridSize+x)*4;
+            row.push(rgbToHex(d[i],d[i+1],d[i+2]));
+        }
+        pixelData.push(row);
+    }
+}
+
+// 匹配 → 只在当前套装内匹配
+function getNearest(hex) {
+    const list = getCurrentSetColors();
+    let best = list[0];
+    let min = 9999;
+    list.forEach(m => {
+        const dist = Math.hypot(
+            parseInt(hex.slice(1,3),16)-parseInt(m.hex.slice(1,3),16),
+            parseInt(hex.slice(3,5),16)-parseInt(m.hex.slice(3,5),16),
+            parseInt(hex.slice(5,7),16)-parseInt(m.hex.slice(5,7),16)
+        );
+        if(dist<min){min=dist;best=m;}
+    });
+    return best;
+}
+
+// 渲染
+function renderAll() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    const count = new Map();
+    const usedCodes = new Set();
+
+    for(let y=0;y<gridSize;y++){
+        for(let x=0;x<gridSize;x++){
+            const hex = pixelData[y][x];
+            const m = getNearest(hex);
+            usedCodes.add(m.code);
+            count.set(m.code, (count.get(m.code)||0)+1);
+            const px = x*pixelSize, py=y*pixelSize;
+            ctx.fillStyle = m.hex;
+            ctx.fillRect(px,py,pixelSize,pixelSize);
+            if(currentHighlight===m.code){ ctx.strokeStyle='#ff0'; ctx.lineWidth=2; ctx.strokeRect(px,py,pixelSize,pixelSize); }
+            ctx.fillStyle = isLight(m.hex) ? '#000':'#fff';
+            ctx.font='7px Arial'; ctx.textAlign='center';
+            ctx.fillText(m.code, px+pixelSize/2, py+pixelSize/2+2);
+        }
+    }
+    drawGrid();
+    updateStats(count);
+}
+
+// 统计 → 只显示当前套装里用到的颜色
+function updateStats(countMap) {
+    const dom = document.getElementById('colorStats');
+    dom.innerHTML = '';
+    const currentList = getCurrentSetColors();
+    currentList.forEach(m => {
+        const num = countMap.get(m.code) || 0;
+        if (num === 0) return;
+        const div = document.createElement('div');
+        div.className = 'flex items-center justify-between p-1 border-b text-sm';
+        div.innerHTML = `
+            <div class="flex items-center gap-2">
+                <div class="w-5 h-5 rounded-full" style="background:${m.hex}"></div>
+                <span>${m.code}</span>
+            </div>
+            <span>${num}颗</span>
+            <button class="text-xs px-2 bg-blue-500 text-white rounded" onclick="highlight('${m.code}')">高亮</button>
+        `;
+        dom.appendChild(div);
+    });
+}
+
+// 高亮
+function highlight(code) {
+    currentHighlight = code;
+    renderAll();
+}
+
+// 手绘
+function initEmptyCanvas() {
+    clearCanvas();
+    pixelData = Array(gridSize).fill().map(()=>Array(gridSize).fill('#FFFFFF'));
+    renderAll();
+}
+
+function drawOnCanvas(e) {
+    if(currentMode!=='draw' || !selectedMard) return;
+    const r = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX-r.left)/pixelSize);
+    const y = Math.floor((e.clientY-r.top)/pixelSize);
+    if(x>=gridSize||y>=gridSize) return;
+    pixelData[y][x] = selectedMard.hex;
+    renderAll();
+}
+
+// 保存
+function saveImage() {
+    const a = document.createElement('a');
+    a.download = `MARD拼豆图纸_${gridSize}×${gridSize}.png`;
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+}
+
+// 工具
+function rgbToHex(r,g,b){ return '#' + ((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1).toUpperCase(); }
+function isLight(hex){ const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16); return (r*0.299+g*0.578+b*0.114)>150; }
+</script>
+</body>
+</html>
